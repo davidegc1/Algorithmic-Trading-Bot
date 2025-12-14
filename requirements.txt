@@ -1,0 +1,7 @@
+# Minimal Requirements
+
+yfinance
+pandas
+numpy
+requests
+python-dotenv

@@ -1,0 +1,119 @@
+# Sensitive files - CRITICAL
+.env
+*.pem
+*key.pem
+trading-bot-key.pem
+*.key
+
+# API credentials
+*API_KEY*
+*SECRET*
+
+# Environment
+venv/
+env/
+ENV/
+__pycache__/
+*.pyc
+*.pyo
+*.py[cod]
+*$py.class
+
+# Data
+data/custom_universe.py
+data/backups/
+trades.json
+*.log
+trading_bot.log
+
+# Results
+results/scans/*.csv
+results/watchlists/*.txt
+
+# Universes (optional - keep commented if you want to share sample universe)
+# universes/
+
+# Backup
+backup_before_migration/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.DS_Store
+ehthumbs.db
+Desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/*.ipynb
+*.ipynb
+
+# AWS
+*.pem
+*.ppk
+
+# Compiled Python
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~.nib
