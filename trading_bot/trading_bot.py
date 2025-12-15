@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 import alpaca_trade_api as tradeapi
 from dataclasses import dataclass
 import json
+import pytz
 
 # Load environment variables
 load_dotenv()
@@ -122,6 +123,9 @@ class VelocityAccelerationBot:
         # Universe of stocks
         self.universe: List[str] = []
         
+        # Current trading session tracker
+        self.current_session: str = "UNKNOWN"
+        
         # Trade logger
         from utils import TradeLogger
         self.trade_logger = TradeLogger('trades.json')
@@ -133,35 +137,58 @@ class VelocityAccelerationBot:
         """
         Load trading universe from file or generate dynamically
         
+        Priority:
+        1. universe_tickers.txt (if exists in trading_bot directory)
+        2. CSV file (if filepath provided)
+        3. Default watchlist
+        
         Args:
             filepath: Path to CSV with stock symbols
             
         Returns:
             List of stock symbols
         """
+        # PRIORITY 1: Try to load from universe_tickers.txt
+        if filepath is None:
+            txt_path = 'universe_tickers.txt'
+            if os.path.exists(txt_path):
+                try:
+                    with open(txt_path, 'r') as f:
+                        # Read lines, strip whitespace, filter out empty lines
+                        self.universe = [line.strip().upper() for line in f if line.strip()]
+                    logger.info(f"📋 Loaded {len(self.universe)} stocks from {txt_path}")
+                    return self.universe
+                except Exception as e:
+                    logger.warning(f"⚠️  Error reading {txt_path}: {e}")
+        
+        # PRIORITY 2: Try CSV file if provided
         if filepath and os.path.exists(filepath):
-            df = pd.read_csv(filepath)
-            self.universe = df['symbol'].tolist() if 'symbol' in df.columns else df.iloc[:, 0].tolist()
-            logger.info(f"📋 Loaded {len(self.universe)} stocks from {filepath}")
-        else:
-            # Default high-volatility watchlist
-            self.universe = [
-                # Crypto-related
-                'MARA', 'RIOT', 'COIN', 'CLSK', 'CIFR',
-                # Biotech
-                'SAVA', 'TBPH', 'IRWD', 'MNMD', 'ATAI',
-                # Small-cap tech
-                'IONQ', 'SOFI', 'HOOD', 'UPST', 'AFRM',
-                # EV/Battery
-                'LCID', 'RIVN', 'PLUG', 'BLNK', 'CHPT',
-                # Cannabis
-                'TLRY', 'CGC', 'SNDL', 'ACB', 'HEXO',
-                # High-beta
-                'GME', 'AMC', 'BBBY', 'FUBO', 'WISH',
-                # Volatile small caps
-                'SPCE', 'OPEN', 'BIRD', 'SKLZ', 'DKNG'
-            ]
-            logger.info(f"📋 Using default watchlist: {len(self.universe)} stocks")
+            try:
+                df = pd.read_csv(filepath)
+                self.universe = df['symbol'].tolist() if 'symbol' in df.columns else df.iloc[:, 0].tolist()
+                logger.info(f"📋 Loaded {len(self.universe)} stocks from {filepath}")
+                return self.universe
+            except Exception as e:
+                logger.warning(f"⚠️  Error reading CSV {filepath}: {e}")
+        
+        # PRIORITY 3: Default high-volatility watchlist
+        self.universe = [
+            # Crypto-related
+            'MARA', 'RIOT', 'COIN', 'CLSK', 'CIFR',
+            # Biotech
+            'SAVA', 'TBPH', 'IRWD', 'MNMD', 'ATAI',
+            # Small-cap tech
+            'IONQ', 'SOFI', 'HOOD', 'UPST', 'AFRM',
+            # EV/Battery
+            'LCID', 'RIVN', 'PLUG', 'BLNK', 'CHPT',
+            # Cannabis
+            'TLRY', 'CGC', 'SNDL', 'ACB', 'HEXO',
+            # High-beta
+            'GME', 'AMC', 'BBBY', 'FUBO', 'WISH',
+            # Volatile small caps
+            'SPCE', 'OPEN', 'BIRD', 'SKLZ', 'DKNG'
+        ]
+        logger.info(f"📋 Using default watchlist: {len(self.universe)} stocks")
         
         return self.universe
     
@@ -394,17 +421,41 @@ class VelocityAccelerationBot:
                 logger.warning(f"⚠️  Calculated quantity is 0 for {signal.symbol}")
                 return False
             
-            # Place market order
-            logger.info(f"🚀 ENTERING {signal.symbol} - Score: {signal.score}, Size: {signal.position_size_pct*100:.0f}%")
-            logger.info(f"   Price: ${signal.current_price:.2f}, Qty: {quantity}, A: {signal.acceleration:.2f}")
+            # Determine order type based on session
+            # Extended hours REQUIRES limit orders, regular hours can use market
+            is_extended_hours = self.extended_hours and self.current_session in ['PRE-MARKET', 'AFTER-MARKET']
             
-            order = self.api.submit_order(
-                symbol=signal.symbol,
-                qty=quantity,
-                side='buy',
-                type='market',
-                time_in_force='day'
-            )
+            if is_extended_hours:
+                # Use limit order for extended hours with small buffer (0.2% above current)
+                order_type = 'limit'
+                limit_price = round(signal.current_price * 1.002, 2)  # 0.2% slippage tolerance
+                
+                logger.info(f"🚀 ENTERING {signal.symbol} - Score: {signal.score}, Size: {signal.position_size_pct*100:.0f}%")
+                logger.info(f"   Price: ${signal.current_price:.2f}, Limit: ${limit_price:.2f}, Qty: {quantity}, A: {signal.acceleration:.2f}")
+                logger.info(f"   Session: {self.current_session} (using LIMIT order)")
+                
+                order = self.api.submit_order(
+                    symbol=signal.symbol,
+                    qty=quantity,
+                    side='buy',
+                    type='limit',
+                    limit_price=limit_price,
+                    time_in_force='day',
+                    extended_hours=True
+                )
+            else:
+                # Use market order for regular hours
+                logger.info(f"🚀 ENTERING {signal.symbol} - Score: {signal.score}, Size: {signal.position_size_pct*100:.0f}%")
+                logger.info(f"   Price: ${signal.current_price:.2f}, Qty: {quantity}, A: {signal.acceleration:.2f}")
+                logger.info(f"   Session: {self.current_session} (using MARKET order)")
+                
+                order = self.api.submit_order(
+                    symbol=signal.symbol,
+                    qty=quantity,
+                    side='buy',
+                    type='market',
+                    time_in_force='day'
+                )
             
             # Wait for fill
             time.sleep(2)
@@ -534,14 +585,41 @@ class VelocityAccelerationBot:
             
             logger.info(f"🔴 EXITING {symbol} - Reason: {reason}")
             
-            # Place market sell order
-            order = self.api.submit_order(
-                symbol=symbol,
-                qty=position.quantity,
-                side='sell',
-                type='market',
-                time_in_force='day'
-            )
+            # Determine order type based on session
+            is_extended_hours = self.extended_hours and self.current_session in ['PRE-MARKET', 'AFTER-MARKET']
+            
+            if is_extended_hours:
+                # Use limit order for extended hours
+                # Get current price
+                bars_5min = self.get_historical_bars(symbol, '5Min', limit=2)
+                if not bars_5min.empty:
+                    current_price = bars_5min.iloc[-1]['close']
+                    limit_price = round(current_price * 0.998, 2)  # 0.2% below current for fast fill
+                else:
+                    limit_price = round(position.entry_price * 0.998, 2)  # Fallback
+                
+                logger.info(f"   Session: {self.current_session} (using LIMIT order @ ${limit_price:.2f})")
+                
+                order = self.api.submit_order(
+                    symbol=symbol,
+                    qty=position.quantity,
+                    side='sell',
+                    type='limit',
+                    limit_price=limit_price,
+                    time_in_force='day',
+                    extended_hours=True
+                )
+            else:
+                # Use market order for regular hours
+                logger.info(f"   Session: {self.current_session} (using MARKET order)")
+                
+                order = self.api.submit_order(
+                    symbol=symbol,
+                    qty=position.quantity,
+                    side='sell',
+                    type='market',
+                    time_in_force='day'
+                )
             
             # Wait for fill
             time.sleep(2)
@@ -647,16 +725,18 @@ class VelocityAccelerationBot:
             self.execute_exit(symbol, reason)
     
     
-    def run(self, scan_interval_seconds: int = 60):
+    def run(self, scan_interval_seconds: int = 60, enable_extended_hours: bool = True):
         """
         Main bot loop
         
         Args:
             scan_interval_seconds: How often to scan (default 60 seconds)
+            enable_extended_hours: Trade during pre/after market (default True)
         """
         logger.info("="*80)
         logger.info("🚀 VELOCITY + ACCELERATION BOT STARTING")
         logger.info("="*80)
+        logger.info(f"Extended Hours Trading: {'ENABLED' if enable_extended_hours else 'DISABLED'}")
         
         # Load universe
         self.load_universe()
@@ -664,12 +744,65 @@ class VelocityAccelerationBot:
         # Get account info
         self.get_account_info()
         
+        # Store extended hours setting
+        self.extended_hours = enable_extended_hours
+        
+        # Set up Eastern timezone
+        eastern = pytz.timezone('US/Eastern')
+        
         try:
             while True:
                 # Check if market is open
                 clock = self.api.get_clock()
                 
-                if clock.is_open:
+                # Get current time in Eastern timezone
+                current_time_et = datetime.now(eastern)
+                current_hour = current_time_et.hour
+                current_minute = current_time_et.minute
+                
+                # Log current time for debugging
+                if not hasattr(self, '_last_logged_time') or (datetime.now().timestamp() - self._last_logged_time) > 3600:
+                    logger.info(f"🕐 Current time (ET): {current_time_et.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                    self._last_logged_time = datetime.now().timestamp()
+                
+                # Determine if we should trade
+                should_trade = False
+                session = "CLOSED"
+                
+                if enable_extended_hours:
+                    # Trade during regular + extended hours (4 AM - 8 PM ET)
+                    
+                    # Pre-market: 4:00 AM - 9:30 AM ET
+                    if (current_hour >= 4 and current_hour < 9) or (current_hour == 9 and current_minute < 30):
+                        should_trade = True
+                        session = "PRE-MARKET"
+                    
+                    # Regular hours: 9:30 AM - 4:00 PM ET
+                    elif (current_hour == 9 and current_minute >= 30) or (current_hour > 9 and current_hour < 16):
+                        should_trade = True
+                        session = "REGULAR"
+                    
+                    # After-market: 4:00 PM - 8:00 PM ET
+                    elif current_hour >= 16 and current_hour < 20:
+                        should_trade = True
+                        session = "AFTER-MARKET"
+                
+                # Store current session for order execution (needed for limit vs market orders)
+                self.current_session = session
+                
+                # Log session changes
+                if not hasattr(self, '_last_session') or self._last_session != session:
+                    if session != "CLOSED":
+                        logger.info(f"📍 Trading Session: {session} (ET: {current_time_et.strftime('%H:%M:%S %Z')})")
+                    self._last_session = session
+                else:
+                    # Only trade during regular market hours
+                    if clock.is_open:
+                        should_trade = True
+                        session = "REGULAR"
+                        self.current_session = session
+                
+                if should_trade:
                     # Manage existing positions first
                     self.manage_positions()
                     
@@ -679,11 +812,15 @@ class VelocityAccelerationBot:
                     logger.info(f"⏰ Next scan in {scan_interval_seconds} seconds...")
                     time.sleep(scan_interval_seconds)
                 else:
-                    next_open = clock.next_open.timestamp()
-                    now = datetime.now().timestamp()
-                    sleep_time = max(60, next_open - now)
-                    logger.info(f"🌙 Market closed. Next open: {clock.next_open}. Sleeping...")
-                    time.sleep(min(sleep_time, 300))  # Check every 5 min max
+                    # Market closed - check less frequently
+                    if session == "CLOSED":
+                        next_open = clock.next_open.timestamp() if clock.next_open else time.time() + 3600
+                        now = time.time()
+                        sleep_time = max(300, min(3600, next_open - now))
+                        logger.info(f"🌙 Market closed. Sleeping for {sleep_time/60:.0f} minutes...")
+                        time.sleep(sleep_time)
+                    else:
+                        time.sleep(60)  # Check again in 1 min if near session boundary
                     
         except KeyboardInterrupt:
             logger.info("⚠️  Bot stopped by user")
