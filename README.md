@@ -56,19 +56,6 @@ See [docs/](docs/) for comprehensive guides:
 - yfinance, pandas, numpy, requests, python-dotenv
 - Optional: Alpaca API account for trading integration
 
-## 🎯 Trading Strategy
-
-This system is designed for aggressive trading targeting 100-500% gains on:
-- High volatility stocks (70-300% annual volatility)
-- Small-cap stocks ($50M - $2B market cap)
-- Liquid stocks (1M+ daily volume)
-- Price range: $0.50 - $50
-
-## ⚠️ Risk Warning
-
-These are high-volatility, high-risk stocks. Use proper position sizing and risk management.
-Only trade with capital you can afford to lose.
-
 ## 📊 Example Usage
 
 ```python
