@@ -1,7 +1,10 @@
-# Minimal Requirements
+# Trading Bot Requirements
 
 yfinance
 pandas
 numpy
 requests
 python-dotenv
+alpaca-trade-api
+alpaca-py
+websockets

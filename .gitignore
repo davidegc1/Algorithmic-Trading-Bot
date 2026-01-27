@@ -19,16 +19,25 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Data
-data/custom_universe.py
-data/backups/
+# Logs and trading data
 trades.json
 *.log
 trading_bot.log
 
-# Results
-results/scans/*.csv
-results/watchlists/*.txt
+# State files
+state/*.json
+state/*.pid
+
+# Log files
+logs/*.log
+
+# Data - UNCOMMENTED to allow upload
+# data/custom_universe.py
+# data/backups/
+
+# Results - UNCOMMENTED to allow upload
+# results/scans/*.csv
+# results/watchlists/*.txt
 
 # Universes (optional - keep commented if you want to share sample universe)
 # universes/
